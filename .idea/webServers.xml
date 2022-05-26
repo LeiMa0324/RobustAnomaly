@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="9bc03c6e-58bb-462a-b185-b4ab202b3a3b" name="turing">
+        <fileTransfer rootFolder="/home/lma5/work" accessType="SFTP" host="turing.wpi.edu" port="22" sshConfigId="86942ce6-c72f-4dad-816c-348b2ae8c510" sshConfig="lma5@turing.wpi.edu:22 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>

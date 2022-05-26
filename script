@@ -1,0 +1,32 @@
+#!/bin/bash
+
+#SBATCH --job-name='robust_anomaly'
+#SBATCH --mem=0
+#SBATCH -n 4
+#SBATCH -N 1
+#SBATCH --gres=gpu:1
+#SBATCH -C V100|T4
+##SBATCH -C P100|V100|T4|K80
+
+# load module
+module load python/3.8.9/bmwsifkx
+
+#load enviroment
+source ~/work/nlp/venv/bin/activate
+
+cd ~/work/RobustAnomaly/HDFS
+
+# process data
+#python data_process.py
+
+#run non-robust Anomaly
+python robust_anomaly.py vocab
+python robust_anomaly.py train --robust=False
+python robust_anomaly.py predict --robust=False
+
+#run robust Anomaly
+#python robust_anomaly.py vocab
+python robust_anomaly.py train --robust=True
+python robust_anomaly.py predict --robust=True
+
+
