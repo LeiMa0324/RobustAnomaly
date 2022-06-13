@@ -15,18 +15,15 @@ module load python/3.8.9/bmwsifkx
 source ~/work/nlp/venv/bin/activate
 
 cd ~/work/RobustAnomaly/HDFS
-
-# process data
-#python data_process.py
-
-#run non-robust Anomaly
-python robust_anomaly.py vocab
 python robust_anomaly.py train --robust=False
 python robust_anomaly.py predict --robust=False
 
-#run robust Anomaly
-#python robust_anomaly.py vocab
-python robust_anomaly.py train --robust=True
-python robust_anomaly.py predict --robust=True
+cd ~/work/RobustAnomaly/BGL
+
+#run non-robust Anomaly, tracking loss
+#python BGL_robust_anomaly.py vocab
+python BGL_robust_anomaly.py train --robust=False
+python BGL_robust_anomaly.py predict --robust=False
+
 
 

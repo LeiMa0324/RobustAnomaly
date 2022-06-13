@@ -21,10 +21,10 @@ class BERTTrainer:
 
     """
 
-    def __init__(self, bert: BERT, vocab_size: int,
+    def __init__(self, bert: BERT, vocab_size: int, epochs: int,
                  train_dataloader: DataLoader, valid_dataloader: DataLoader = None,
                  lr: float = 1e-4, betas=(0.9, 0.999), weight_decay: float = 0.01, warmup_steps=10000,
-                 with_cuda: bool = True, cuda_devices=None, log_freq: int = 10, is_logkey=True, is_time=False,is_robust=True,
+                 with_cuda: bool = True, cuda_devices=None, log_freq: int = 10, is_logkey=True, is_time=False,is_robust=True,is_label=False,
                  hypersphere_loss=False):
         """
         :param bert: BERT model which you want to train
@@ -88,11 +88,20 @@ class BERTTrainer:
                       for key in ["epoch", "lr", "time", "loss"]}
         }
 
+        self.detailed_log = {
+            "train": { key: []
+                      for key in ["epoch", "label", "loss"]},
+            "valid": { key: []
+                      for key in ["epoch", "label", "loss"]}
+        }
+
         print("Total Parameters:", sum([p.nelement() for p in self.model.parameters()]))
 
         self.is_logkey = is_logkey
         self.is_time = is_time
         self.is_robust = is_robust
+        self.epochs = epochs
+        self.is_label = is_label
 
     def init_optimizer(self):
         # Setting the Adam optimizer with hyper-param
@@ -104,6 +113,41 @@ class BERTTrainer:
 
     def valid(self, epoch):
         return self.iteration(epoch, self.valid_data, start_train=False)
+
+    def predict(self):
+        data_iter = enumerate(self.train_data)
+        pred = []
+        token_labels = []
+        seq_labels = []
+        token_loss = []
+
+        log = pd.DataFrame()
+
+        with torch.no_grad():
+            for i, data in data_iter:
+                data = {key: value.to(self.device) for key, value in data.items()}
+
+                output = self.model.forward(data["bert_input"], data["time_input"])
+                mask_lm_output = output["logkey_output"]
+
+                # monitor the prediction uncertainties
+                predictions = mask_lm_output.argmax(dim=2, keepdim=True)
+                pred.extend(predictions.reshape(-1).tolist())# reshape to token level
+                token_labels.extend(data["token_label"].reshape(-1).tolist())
+                labels = data["label"].reshape(-1, 1).repeat(1, data["bert_input"].size(1))
+                seq_labels.extend(labels.reshape(-1).tolist())
+                assert len(pred) ==len(token_labels)==len(seq_labels)
+
+                # monitor all token loss
+                all_token_loss = self.criterion(mask_lm_output.transpose(1, 2), data["bert_ori_input"])
+                token_loss.extend(all_token_loss.reshape(-1).tolist())
+
+        log["pred_uncertainty"]  = np.array(pred)
+        log["token_label"]  = np.array(token_labels)
+        log["seq_label"] =np.array(seq_labels)
+        log["token_loss"] = np.array(token_loss)
+
+        return log
 
     def iteration(self, epoch, data_loader, start_train):
         """
@@ -123,6 +167,7 @@ class BERTTrainer:
         self.log[str_code]['lr'].append(lr)
         self.log[str_code]['time'].append(start)
 
+
         # Setting the tqdm progress bar
         totol_length = len(data_loader)
         # data_iter = tqdm.tqdm(enumerate(data_loader), total=totol_length)
@@ -132,6 +177,13 @@ class BERTTrainer:
         total_logkey_loss = 0.0  # the loss of next log key prediction
 
         total_dist = []
+
+        #todo: no confidence score for validation
+
+        confidence_score = 1
+        if self.is_robust and str_code == "train":
+            confidence_score = epoch/(epoch+30)
+
         for i, data in data_iter:
             data = {key: value.to(self.device) for key, value in data.items()}
 
@@ -139,21 +191,33 @@ class BERTTrainer:
             # return the prediction of the masked log key and the time interval
             mask_lm_output = result["logkey_output"]
 
+
             # 2-2. NLLLoss of predicting masked token word ignore_index = 0 to ignore unmasked tokens
             # since the last layer is a logsoftmax, here use NLlloss, if its a soft max layer, use CrossEntropy loss instead
             mask_loss = torch.tensor(0) if not self.is_logkey else self.criterion(mask_lm_output.transpose(1, 2), data["bert_label"])
+            #
+            # if self.is_label: # record the loss of the current datapoint
+            #
+            #     self.detailed_log[str_code]["epoch"].extend((torch.zeros_like(data["label"])+epoch).tolist())
+            #     self.detailed_log[str_code]["label"].extend(data["label"].tolist())
+            #     num_masked =torch.count_nonzero(data["bert_label"], dim = 1).reshape(-1, 1).to(torch.float64)
+            #     sequence_loss = torch.sum(mask_loss, 1).reshape(-1, 1)
+            #     avg_masked_token_loss = torch.div(sequence_loss,num_masked)
+            #     self.detailed_log[str_code]["loss"].extend(avg_masked_token_loss.tolist())
 
-            # compute the weighted loss, if no robust, the scores stay 0
-            weighted_loss = (1- data["score"])*mask_loss
 
-            if self.is_robust and epoch>10:
-
+            # every epoch the score is reset to 0
+            #compute the abnormal score using the current prediction, then weight the loss
+            if self.is_robust and str_code == "train" and epoch>10:
                 #todo: update the abnormal score for the masked tokens after certain epochs
-                # todo: weight the update of abnormal score, more epochs, more aggresive update
+                #todo: weight the update of abnormal score, more epochs, more aggresive update
                 #update the abnormal score after certain epochs
                 mask_labels = (data["bert_label"]==0 ).type(torch.uint8)# find the masked tokens, indicate by 0
                 data["score"] = data["score"]*mask_labels  #reset the score of the masked tokens to 0, other remains the same
                 data["score"] = 1-torch.exp(-mask_loss) # update the scores, score = 1-p(y)
+
+            # compute the weighted loss
+            weighted_loss = (1- confidence_score*data["score"])*mask_loss
 
             total_logkey_loss += weighted_loss.sum()   #logkey loss is the sum of mask loss
 
@@ -171,10 +235,19 @@ class BERTTrainer:
         avg_loss = total_loss / totol_length  # after the epoch, calculate the avg loss of this epoch
         self.log[str_code]['epoch'].append(epoch)
         self.log[str_code]['loss'].append(avg_loss)
-        print("Epoch: {} | phase: {}, loss={}".format(epoch, str_code, avg_loss))
+        print("Epoch: {} | phase: {}, loss={}, confidence score={}".format(epoch, str_code, avg_loss, confidence_score))
         print(f"logkey weighted loss: {total_logkey_loss/totol_length}\n")
 
         return avg_loss, total_dist
+
+    def save_detailed_loss(self,  save_dir, loss_log ="detailed_loss"):
+        try:
+            for key, values in self.detailed_log.items():
+                pd.DataFrame(values).to_csv(save_dir + key + f"_{loss_log}.csv",
+                                            index=False)
+            print("Detailed Loss Log saved")
+        except:
+            print("Failed to save detailed loss logs")
 
     def save_log(self, save_dir, surfix_log):
         try:

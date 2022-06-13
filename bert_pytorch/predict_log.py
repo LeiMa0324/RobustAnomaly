@@ -101,7 +101,7 @@ class Predictor():
         with open(output_dir + file_name, "r") as f:
             for idx, line in tqdm(enumerate(f.readlines())):
                 #if idx > 40: break
-                log_seq, tim_seq = fixed_window(line, window_size,
+                log_seq, tim_seq, labels, token_labels = fixed_window(line, window_size,
                                                 adaptive_window=adaptive_window,
                                                 seq_len=seq_len, min_len=min_len)
                 if len(log_seq) == 0:

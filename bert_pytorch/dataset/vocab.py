@@ -118,11 +118,13 @@ class Vocab(TorchVocab):
 
 # Building Vocab with text files
 class WordVocab(Vocab):
-    def __init__(self, texts, max_size=None, min_freq=1, if_time=False):
+    def __init__(self, texts, max_size=None, min_freq=1, if_time=False, if_token_label=False, if_seq_label=False):
         print("Building Vocab")
         counter = Counter()
         for line in tqdm.tqdm(texts):
             words=[]
+            if if_seq_label or if_token_label:
+                line = line.split(",")[-1]
             if isinstance(line, list):
                 if if_time:  # if has time info the info is "eventid, timeDuration"
                     for item in line:
