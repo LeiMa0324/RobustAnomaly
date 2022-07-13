@@ -63,7 +63,7 @@ class LogDataset(Dataset):
         token_labels = [0]+ t_l.tolist()
 
 
-        return  k, k_label, t, t_label, scores, l, token_labels, k_before_mask
+        return  k, k_label, t, t_label, scores, l, token_labels, k_before_mask, idx
 
     def random_masking(self, k, t):
 
@@ -142,6 +142,7 @@ class LogDataset(Dataset):
             label = seq[5]
             token_label = seq[6][:seq_len]
             bert_ori_input = seq[7][:seq_len]
+            index = seq[8]
 
             padding = [self.vocab.pad_index for _ in range(seq_len - len(bert_input))]
             token_label_padding = [-1 for _ in range(seq_len - len(bert_input))]
@@ -157,6 +158,7 @@ class LogDataset(Dataset):
             output["label"].append(label)
             output["token_label"].append(token_label)
             output["bert_ori_input"].append(bert_ori_input)
+            output["index"].append(index)
 
         output["bert_input"] = torch.tensor(np.array(output["bert_input"]), dtype=torch.long)
         output["bert_label"] = torch.tensor(np.array(output["bert_label"]), dtype=torch.long)
@@ -167,7 +169,7 @@ class LogDataset(Dataset):
         token_label_arr = np.array(output["token_label"])
         output["token_label"] = torch.from_numpy(token_label_arr)
         output["bert_ori_input"] = torch.tensor(np.array(output["bert_ori_input"]), dtype=torch.long)
-
+        output["index"] = torch.tensor(np.array(output["index"]), dtype=torch.long)
 
         assert len(output["score"])==len(output["bert_input"])
 

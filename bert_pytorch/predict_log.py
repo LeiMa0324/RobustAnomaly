@@ -48,6 +48,7 @@ def find_best_threshold(test_normal_results, test_abnormal_results, params, th_r
 
 class Predictor():
     def __init__(self, options):
+        self.data_dir = options["data_dir"]
         self.model_path = options["model_path"]
         self.vocab_path = options["vocab_path"]
         self.device = options["device"]
@@ -98,12 +99,14 @@ class Predictor():
         """
         log_seqs = []
         tim_seqs = []
+        label_seq_paris = []
+        token_label_seq_paris = []
         with open(output_dir + file_name, "r") as f:
             for idx, line in tqdm(enumerate(f.readlines())):
                 #if idx > 40: break
                 log_seq, tim_seq, labels, token_labels = fixed_window(line, window_size,
                                                 adaptive_window=adaptive_window,
-                                                seq_len=seq_len, min_len=min_len)
+                                                seq_len=seq_len, min_len=min_len, is_label=True)
                 if len(log_seq) == 0:
                     continue
 
@@ -116,27 +119,33 @@ class Predictor():
 
                 log_seqs += log_seq
                 tim_seqs += tim_seq
+                label_seq_paris+= labels
+                token_label_seq_paris += token_labels
 
         # sort seq_pairs by seq len
         log_seqs = np.array(log_seqs)
         tim_seqs = np.array(tim_seqs)
+        label_seq_paris = np.array(label_seq_paris)
+        token_label_seq_paris = np.array(token_label_seq_paris)
 
         test_len = list(map(len, log_seqs))
         test_sort_index = np.argsort(-1 * np.array(test_len))
 
         log_seqs = log_seqs[test_sort_index]
         tim_seqs = tim_seqs[test_sort_index]
+        label_seq = label_seq_paris[test_sort_index]
+        token_label_seq = token_label_seq_paris[test_sort_index]
 
         print(f"{file_name} size: {len(log_seqs)}")
-        return log_seqs, tim_seqs
+        return log_seqs, tim_seqs, label_seq, token_label_seq
 
-    def helper(self, model, output_dir, file_name, vocab, scale=None, error_dict=None):
+    def helper(self, model, data_dir, file_name, vocab, scale=None, error_dict=None):
         total_results = []
         total_errors = []
         output_results = []
         total_dist = []
         output_cls = []
-        logkey_test, time_test = self.generate_test(output_dir, file_name, self.window_size, self.adaptive_window, self.seq_len, scale, self.min_len)
+        logkey_test, time_test, label_test, token_label_test = self.generate_test(data_dir, file_name, self.window_size, self.adaptive_window, self.seq_len, scale, self.min_len)
 
         # use 1/10 test data
         if self.test_ratio != 1:
@@ -147,7 +156,8 @@ class Predictor():
 
 
         seq_dataset = LogDataset(logkey_test, time_test, vocab, seq_len=self.seq_len,
-                                 corpus_lines=self.corpus_lines, on_memory=self.on_memory, predict_mode=True, mask_ratio=self.mask_ratio)
+                                 corpus_lines=self.corpus_lines, on_memory=self.on_memory, predict_mode=True, mask_ratio=self.mask_ratio,
+                                 label_corpus=label_test, token_label_corpus=token_label_test)
 
         # use large batch size in test data
         data_loader = DataLoader(seq_dataset, batch_size=self.batch_size, num_workers=self.num_workers,
@@ -203,18 +213,18 @@ class Predictor():
                     # if dist > 0.25:
                     #     pass
 
-                if idx < 10 or idx % 1000 == 0:
-                    print(
-                        "{}, #time anomaly: {} # of undetected_tokens: {}, # of masked_tokens: {} , "
-                        "# of total logkey {}, deepSVDD_label: {} \n".format(
-                            file_name,
-                            seq_results["num_error"],
-                            seq_results["undetected_tokens"],
-                            seq_results["masked_tokens"],
-                            seq_results["total_logkey"],
-                            seq_results['deepSVDD_label']
-                        )
-                    )
+                # if idx < 10 or idx % 1000 == 0:
+                #     print(
+                #         "{}, #time anomaly: {} # of undetected_tokens: {}, # of masked_tokens: {} , "
+                #         "# of total logkey {}, deepSVDD_label: {} \n".format(
+                #             file_name,
+                #             seq_results["num_error"],
+                #             seq_results["undetected_tokens"],
+                #             seq_results["masked_tokens"],
+                #             seq_results["total_logkey"],
+                #             seq_results['deepSVDD_label']
+                #         )
+                #     )
                 total_results.append(seq_results)
 
         # for time
@@ -254,10 +264,10 @@ class Predictor():
 
 
         print("test normal predicting")
-        test_normal_results, test_normal_errors = self.helper(model, self.output_dir, "test_normal", vocab, scale, error_dict)
+        test_normal_results, test_normal_errors = self.helper(model, self.data_dir, "test_normal", vocab, scale, error_dict)
 
         print("test abnormal predicting")
-        test_abnormal_results, test_abnormal_errors = self.helper(model, self.output_dir, "test_abnormal", vocab, scale, error_dict)
+        test_abnormal_results, test_abnormal_errors = self.helper(model, self.data_dir, "test_abnormal", vocab, scale, error_dict)
 
         print("Saving test normal results")
         with open(self.model_dir + "test_normal_results", "wb") as f:
@@ -282,7 +292,7 @@ class Predictor():
                                                                             params=params,
                                                                             th_range=np.arange(10),
                                                                             seq_range=np.arange(0,1,0.1))
-
+        print(f"model path: {self.model_path}\n")
         print("best threshold: {}, best threshold ratio: {}".format(best_th, best_seq_th))
         print("TP: {}, TN: {}, FP: {}, FN: {}".format(TP, TN, FP, FN))
         print('Precision: {:.2f}%, Recall: {:.2f}%, F1-measure: {:.2f}%'.format(P, R, F1))

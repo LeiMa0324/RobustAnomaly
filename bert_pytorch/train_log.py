@@ -17,6 +17,7 @@ import gc
 class Trainer():
     def __init__(self, options):
         self.device = options["device"]
+        self.data_dir = options["data_dir"]
         self.model_dir = options["model_dir"]
         self.model_path = options["model_path"]
         self.vocab_path = options["vocab_path"]
@@ -53,6 +54,11 @@ class Trainer():
         self.min_len = options['min_len']
         self.is_robust = options["is_robust"]
         self.is_label = options["is_label"]
+        self.output_attentions = options["output_attentions"] # if output the attention scores
+
+        self.robust_method = options["robust_method"]
+        self.weight_method = options["weight_method"]
+        self.weight_on = options["weight_on"]
 
         print("Save options parameters")
         save_parameters(options, self.model_dir + "parameters.txt")
@@ -104,26 +110,26 @@ class Trainer():
 
         print("Building BERT model")
         bert = BERT(len(vocab), max_len=self.max_len, hidden=self.hidden, n_layers=self.layers, attn_heads=self.attn_heads,
-                    is_logkey=self.is_logkey, is_time=self.is_time)
+                    is_logkey=self.is_logkey, is_time=self.is_time, output_attentions= False)
 
         print("Creating BERT Trainer")
         self.trainer = BERTTrainer(bert, len(vocab), epochs=self.epochs, train_dataloader=self.train_data_loader, valid_dataloader=self.valid_data_loader,
                               lr=self.lr, betas=(self.adam_beta1, self.adam_beta2), weight_decay=self.adam_weight_decay,
                               with_cuda=self.with_cuda, cuda_devices=self.cuda_devices, log_freq=self.log_freq,
                               is_logkey=self.is_logkey, is_time=self.is_time, is_robust= self.is_robust,is_label= self.is_label,
-                              hypersphere_loss=self.hypersphere_loss)
+                              hypersphere_loss=self.hypersphere_loss, robust_method=self.robust_method, weight_method= self.weight_method,
+                                   weight_on = self.weight_on)
 
         self.start_iteration(surfix_log="log2")
 
         self.plot_train_valid_loss("_log2")
-        self.plot_detailed_loss()
+        # self.plot_detailed_loss()
 
 #only train with minimizing the hypersphere size
     def start_iteration(self, surfix_log):
         print("Training Start")
         best_loss = float('inf')
         epochs_no_improve = 0
-        prediction_uncertainty = Tracker(5)
         # best_center = None
         # best_radius = 0
         # total_dist = None
@@ -131,8 +137,6 @@ class Trainer():
             print("\n")
 
             _, train_dist = self.trainer.train(epoch)   # train with masked language model, return avglost, distance
-            log_df = self.trainer.predict()  # predict the tokens
-            prediction_uncertainty.loadTracking(log_df, epoch) # calculate prediction uncertainties
 
             avg_loss, valid_dist = self.trainer.valid(epoch)
             self.trainer.save_log(self.model_dir, surfix_log)

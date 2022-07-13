@@ -107,10 +107,10 @@ def generate_train_valid(data_path, window_size=20, adaptive_window=True,
         label_seq_paris +=seq_label
         token_label_seq_paris +=token_labels
 
-    logkey_seq_pairs = np.array(logkey_seq_pairs)
-    time_seq_pairs = np.array(time_seq_pairs)
-    label_seq_paris = np.array(label_seq_paris)
-    token_label_seq_paris = np.array(token_label_seq_paris)
+    logkey_seq_pairs = np.array(logkey_seq_pairs,  dtype=object)
+    time_seq_pairs = np.array(time_seq_pairs,  dtype=object)
+    label_seq_paris = np.array(label_seq_paris,  dtype=object)
+    token_label_seq_paris = np.array(token_label_seq_paris,  dtype=object)
 
     logkey_trainset, logkey_validset, time_trainset, time_validset,\
     label_trainset, label_validset,\

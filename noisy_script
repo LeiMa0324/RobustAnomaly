@@ -1,0 +1,55 @@
+#!/bin/bash
+
+#SBATCH --job-name='noisy'
+#SBATCH --mem=0
+#SBATCH -n 4
+#SBATCH -N 1
+#SBATCH --gres=gpu:1
+#SBATCH -C V100|T4
+##SBATCH -C P100|V100|T4|K80
+
+# load module
+module load python/3.8.9/bmwsifkx
+
+#load enviroment
+source ~/work/nlp/venv/bin/activate
+
+cd ~/work/RobustAnomaly/BGL
+#weight on loss
+#SGD-WPV
+#python BGL_robust_anomaly.py train --robust_method=activeBias --weight_method=SGD-WPV --if_clean=noisy
+#python BGL_robust_anomaly.py predict --robust_method=activeBias --weight_method=SGD-WPV --if_clean=noisy
+##SGD-WD
+#python BGL_robust_anomaly.py train --robust_method=activeBias --weight_method=SGD-WD --if_clean=noisy
+#python BGL_robust_anomaly.py predict --robust_method=activeBias --weight_method=SGD-WD --if_clean=noisy
+##SGD-WE
+#python BGL_robust_anomaly.py train --robust_method=activeBias --weight_method=SGD-WE --if_clean=noisy
+#python BGL_robust_anomaly.py predict --robust_method=activeBias --weight_method=SGD-WE --if_clean=noisy
+#high-entropy
+python BGL_robust_anomaly.py train --robust_method=activeBias --weight_method=high-entropy --if_clean=noisy
+python BGL_robust_anomaly.py predict --robust_method=activeBias --weight_method=high-entropy --if_clean=noisy
+#low-entropy
+python BGL_robust_anomaly.py train --robust_method=activeBias --weight_method=low-entropy --if_clean=noisy
+python BGL_robust_anomaly.py predict --robust_method=activeBias --weight_method=low-entropy --if_clean=noisy
+
+#vanilla
+#python BGL_robust_anomaly.py train --robust_method=vanilla --if_clean=noisy
+#python BGL_robust_anomaly.py predict --robust_method=vanilla --if_clean=noisy
+
+#weight on attention
+#python BGL_robust_anomaly.py train --robust_method=activeBias --weight_on=attention --weight_method=SGD-WPV --if_clean=noisy
+#python BGL_robust_anomaly.py predict --robust_method=activeBias --weight_on=attention --weight_method=SGD-WPV --if_clean=noisy
+#
+#python BGL_robust_anomaly.py train --robust_method=activeBias --weight_on=attention --weight_method=SGD-WD --if_clean=noisy
+#python BGL_robust_anomaly.py predict --robust_method=activeBias --weight_on=attention --weight_method=SGD-WD --if_clean=noisy
+#
+#python BGL_robust_anomaly.py train --robust_method=activeBias --weight_on=attention --weight_method=SGD-WE --if_clean=noisy
+#python BGL_robust_anomaly.py predict --robust_method=activeBias --weight_on=attention --weight_method=SGD-WE --if_clean=noisy
+
+#high-entropy
+python BGL_robust_anomaly.py train --robust_method=activeBias --weight_on=attention --weight_method=high-entropy --if_clean=noisy
+python BGL_robust_anomaly.py predict --robust_method=activeBias --weight_on=attention --weight_method=high-entropy --if_clean=noisy
+#low-entropy
+python BGL_robust_anomaly.py train --robust_method=activeBias --weight_on=attention --weight_method=low-entropy --if_clean=noisy
+python BGL_robust_anomaly.py predict --robust_method=activeBias --weight_on=attention --weight_method=low-entropy --if_clean=noisy
+

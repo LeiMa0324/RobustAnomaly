@@ -7,7 +7,7 @@ class BERTLog(nn.Module):
     BERT Log Model
     """
 
-    def __init__(self, bert: BERT, vocab_size):
+    def __init__(self, bert: BERT, vocab_size, output_attentions = False):
         """
         :param bert: BERT model which should be trained
         :param vocab_size: total vocab size for masked_lm
@@ -19,10 +19,15 @@ class BERTLog(nn.Module):
         self.time_lm = TimeLogModel(self.bert.hidden)
         # self.fnn_cls = LinearCLS(self.bert.hidden)
         #self.cls_lm = LogClassifier(self.bert.hidden)
-        self.result = {"logkey_output": None, "time_output": None, "cls_output": None, "cls_fnn_output": None}
+        self.result = {"logkey_output": None, "time_output": None, "cls_output": None, "cls_fnn_output": None, "atten_scores":None}
+        self.output_attentions = output_attentions
 
-    def forward(self, x, time_info):
-        x = self.bert(x, time_info=time_info)
+
+    def forward(self, x, time_info, attention_weights = None):
+        outputs = self.bert(x, time_info=time_info, attention_weights= attention_weights)
+        x = outputs[0]
+        if self.output_attentions:
+            self.result["atten_scores"] = outputs[-1]
 
         #lei: after bert, connect fully connected layer to predict the logkey output
         self.result["logkey_output"] = self.mask_lm(x)

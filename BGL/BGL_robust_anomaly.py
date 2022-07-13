@@ -20,12 +20,6 @@ from logdeep.tools.utils import *
 options = dict()
 options['device'] = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-options["output_dir"] = "../output/bgl/dirty/"
-options["model_dir"] = options["output_dir"] + "bert/"
-options["model_path"] = options["model_dir"] + "best_bert.pth"
-options["train_vocab"] = options['output_dir'] + 'train'
-options["vocab_path"] = options["output_dir"] + "vocab.pkl"
-
 options["window_size"] = 128
 options["adaptive_window"] = True
 options["seq_len"] = 512
@@ -48,21 +42,22 @@ options["hypersphere_loss"] = False
 options["hypersphere_loss_test"] = False
 
 options["scale"] = None # MinMaxScaler()
-options["scale_path"] = options["model_dir"] + "scale.pkl"
 
 # model
 options["hidden"] = 256 # embedding size
 options["layers"] = 4
 options["attn_heads"] = 4
+options["output_attentions"] = True
+options["tracking"] = True
 
-options["epochs"] = 200
+options["epochs"] = 200  # 200
 options["n_epochs_stop"] = 10
 options["batch_size"] = 32
 
 options["corpus_lines"] = None
 options["on_memory"] = True
-options["num_workers"] = 5
-options["lr"] = 1e-3
+options["num_workers"] = 4
+options["lr"] = 1e-4
 options["adam_beta1"] = 0.9
 options["adam_beta2"] = 0.999
 options["adam_weight_decay"] = 0.00
@@ -83,13 +78,19 @@ if __name__ == "__main__":
 
     train_parser = subparsers.add_parser('train')
     train_parser.set_defaults(mode='train')
-    train_parser.add_argument("--robust", type=str, default="True")
+    train_parser.add_argument("--robust_method", type=str, default="None")
+    train_parser.add_argument("--weight_on", type=str, default="loss")
+    train_parser.add_argument("--weight_method", type=str, default="None")
+    train_parser.add_argument("--if_clean", type=str, default="None")
 
     predict_parser = subparsers.add_parser('predict')
     predict_parser.set_defaults(mode='predict')
     predict_parser.add_argument("-m", "--mean", type=float, default=0)
     predict_parser.add_argument("-s", "--std", type=float, default=1)
-    predict_parser.add_argument("--robust", type=str, default="True")
+    predict_parser.add_argument("--robust_method", type=str, default="None")
+    predict_parser.add_argument("--weight_on", type=str, default="loss")
+    predict_parser.add_argument("--weight_method", type=str, default="None")
+    predict_parser.add_argument("--if_clean", type=str, default="None")
 
     vocab_parser = subparsers.add_parser('vocab')
     vocab_parser.set_defaults(mode='vocab')
@@ -98,6 +99,7 @@ if __name__ == "__main__":
     vocab_parser.add_argument("-m", "--min_freq", type=int, default=1)
 
     args = parser.parse_args()
+    print("*****************************************************************************")
     print("arguments", args)
     # Trainer(options).train()
     # Predictor(options).predict()
@@ -107,29 +109,51 @@ if __name__ == "__main__":
     print("mask ratio", options["mask_ratio"])
 
     if args.mode == 'train':
-        options["is_robust"] = args.robust=="True"
-        if options["is_robust"]:
-            options["model_dir"] = options["output_dir"] + "robust_bert/"
-        else:
-            options["model_dir"] = options["output_dir"] + "non_robust_bert/"
+
+        options["robust_method"] = args.robust_method
+        options["weight_method"] = args.weight_method
+        options["weight_on"] = args.weight_on  # loss or attention
+        options["if_clean"] = args.if_clean
+
+        options["output_dir"] = "../output/bgl/datasets/"+options["if_clean"]+"/"
+        options["data_dir"] = options["output_dir"]
+
+        options["model_dir"] = options["output_dir"] +options["weight_on"]+"/"+ options["robust_method"] +"/"
+
+        if options["robust_method"]=="activeBias":
+            options["model_dir"] =options["model_dir"] +options["weight_method"]+"/"
+
         options["model_path"] = options["model_dir"] + "best_bert.pth"
         options["scale_path"] = options["model_dir"] + "scale.pkl"
+        options["train_vocab"] = options["data_dir"] + 'train'
+        options["vocab_path"] = options["data_dir"] + "vocab.pkl"
+
         if not os.path.exists(options['model_dir']):
             os.makedirs(options['model_dir'], exist_ok=True)
         Trainer(options).train()
 
     elif args.mode == 'predict':
-        options["is_robust"] = args.robust == "True"
-        if options["is_robust"]:
-            options["model_dir"] = options["output_dir"] + "robust_bert/"
-        else:
-            options["model_dir"] = options["output_dir"] + "non_robust_bert/"
-        model_dir = options["model_dir"]
+        options["robust_method"] = args.robust_method
+        options["weight_method"] = args.weight_method
+        options["weight_on"] = args.weight_on  # loss or attention
+        options["if_clean"] = args.if_clean
+
+        options["output_dir"] = "../output/bgl/datasets/" + options["if_clean"] + "/"
+        options["data_dir"] = options["output_dir"]
+
+        options["model_dir"] = options["output_dir"] + options["weight_on"] + "/" + options["robust_method"] + "/"
+
+        if options["robust_method"] == "activeBias":
+            options["model_dir"] = options["model_dir"] + options["weight_method"] + "/"
+
         options["model_path"] = options["model_dir"] + "best_bert.pth"
         options["scale_path"] = options["model_dir"] + "scale.pkl"
+        options["vocab_path"] = options["data_dir"] + "vocab.pkl"
+
         if not os.path.exists(options['model_dir']):
             os.makedirs(options['model_dir'], exist_ok=True)
-        Predictor(options).predict()
+        else:
+            Predictor(options).predict()
 
     elif args.mode == 'vocab':
         with open(options["train_vocab"], 'r') as f:
