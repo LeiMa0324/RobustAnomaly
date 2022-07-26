@@ -123,10 +123,10 @@ class Predictor():
                 token_label_seq_paris += token_labels
 
         # sort seq_pairs by seq len
-        log_seqs = np.array(log_seqs)
-        tim_seqs = np.array(tim_seqs)
-        label_seq_paris = np.array(label_seq_paris)
-        token_label_seq_paris = np.array(token_label_seq_paris)
+        log_seqs = np.array(log_seqs, dtype=object)
+        tim_seqs = np.array(tim_seqs, dtype=object)
+        label_seq_paris = np.array(label_seq_paris, dtype=object)
+        token_label_seq_paris = np.array(token_label_seq_paris, dtype=object)
 
         test_len = list(map(len, log_seqs))
         test_sort_index = np.argsort(-1 * np.array(test_len))
@@ -257,7 +257,7 @@ class Predictor():
         #         error_dict = pickle.load(f)
 
         if self.hypersphere_loss:
-            center_dict = torch.load(self.model_dir + "best_center.pt")
+            center_dict = torch.load(self.model_dir+"best_center.pt")
             self.center = center_dict["center"]
             self.radius = center_dict["radius"]
             # self.center = self.center.view(1,-1)

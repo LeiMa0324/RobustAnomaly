@@ -6,7 +6,7 @@ from bert_pytorch.dataset.sample import generate_train_valid
 from bert_pytorch.dataset.utils import save_parameters
 
 from training_tracker import Tracker
-
+from bert_pytorch.predict_log import Predictor
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
@@ -59,6 +59,7 @@ class Trainer():
         self.robust_method = options["robust_method"]
         self.weight_method = options["weight_method"]
         self.weight_on = options["weight_on"]
+        self.predictor = Predictor(options)
 
         print("Save options parameters")
         save_parameters(options, self.model_dir + "parameters.txt")
@@ -113,7 +114,7 @@ class Trainer():
                     is_logkey=self.is_logkey, is_time=self.is_time, output_attentions= False)
 
         print("Creating BERT Trainer")
-        self.trainer = BERTTrainer(bert, len(vocab), epochs=self.epochs, train_dataloader=self.train_data_loader, valid_dataloader=self.valid_data_loader,
+        self.trainer = BERTTrainer(bert, len(vocab), epochs=self.epochs, model_dir =self.model_dir, train_dataloader=self.train_data_loader, valid_dataloader=self.valid_data_loader,
                               lr=self.lr, betas=(self.adam_beta1, self.adam_beta2), weight_decay=self.adam_weight_decay,
                               with_cuda=self.with_cuda, cuda_devices=self.cuda_devices, log_freq=self.log_freq,
                               is_logkey=self.is_logkey, is_time=self.is_time, is_robust= self.is_robust,is_label= self.is_label,
@@ -128,7 +129,7 @@ class Trainer():
 #only train with minimizing the hypersphere size
     def start_iteration(self, surfix_log):
         print("Training Start")
-        best_loss = float('inf')
+        best_valid_loss = float('inf')
         epochs_no_improve = 0
         # best_center = None
         # best_radius = 0
@@ -136,27 +137,53 @@ class Trainer():
         for epoch in range(self.epochs):
             print("\n")
 
-            _, train_dist = self.trainer.train(epoch)   # train with masked language model, return avglost, distance
+            if self.hypersphere_loss:
+                center = self.calculate_center([self.train_data_loader, self.valid_data_loader])
+                self.trainer.hyper_center = center  #update the center
 
-            avg_loss, valid_dist = self.trainer.valid(epoch)
+            _, train_dist = self.trainer.train(epoch)   # train with masked language model, return avglost, distance
+            avg_valid_loss, valid_dist = self.trainer.valid(epoch)
+
             self.trainer.save_log(self.model_dir, surfix_log)
 
-            if self.is_label:
-                self.trainer.save_detailed_loss(self.model_dir)
+            self.trainer.save(self.model_path)  # store model
+            self.predictor.predict()  #predict
 
             # save model after 10 warm up epochs
-            if avg_loss < best_loss:    #store the model if it's a best model so far
-                best_loss = avg_loss
-                self.trainer.save(self.model_path)
-                epochs_no_improve = 0
+            best_valid_loss,epochs_no_improve, if_stop = self.early_stop(avg_valid_loss, best_valid_loss,
+                                                                         train_dist, valid_dist, epochs_no_improve)
 
-            else:
-                epochs_no_improve += 1  # keep track of the num of continuous no improving epochs
-
-            if epochs_no_improve == self.n_epochs_stop:  # early stop if there is no improvement
-                print("Early stopping")
+            if if_stop:
                 break
 
+
+
+    #todo: learn the pseudo labels
+    def learn_pseudo_labels(self):
+        pass
+
+    def calculate_center(self, data_loader_list):
+        print("start calculate center")
+        # model = torch.load(self.model_path)
+        # model.to(self.device)
+        with torch.no_grad():
+            outputs = 0
+            total_samples = 0
+            for data_loader in data_loader_list:
+                totol_length = len(data_loader)
+                data_iter = tqdm.tqdm(enumerate(data_loader), total=totol_length)
+                for i, data in data_iter:
+                    data = {key: value.to(self.device) for key, value in data.items()}
+
+                    result = self.trainer.model.forward(data["bert_input"], data["time_input"])
+                    cls_output = result["cls_output"]
+
+                    outputs += torch.sum(cls_output.detach().clone(), dim=0)
+                    total_samples += cls_output.size(0)
+
+        center = outputs / total_samples
+
+        return center
 
     def plot_train_valid_loss(self, surfix_log):
         train_loss = pd.read_csv(self.model_dir + f"train{surfix_log}.csv")
@@ -169,24 +196,38 @@ class Trainer():
         plt.show()
         print("plot done")
 
+    def early_stop(self, avg_valid_loss, best_valid_loss, train_dist, valid_dist, epochs_no_improve):
 
-    def plot_detailed_loss(self):
-        train_loss = pd.read_csv(self.model_dir + f"train_detailed_loss.csv")
-        valid_loss = pd.read_csv(self.model_dir + f"valid_detailed_loss.csv")
-        max_epochs = train_loss["epoch"].max()
-        for e in range(max_epochs+1):
-            if e%5==0:
-                data = train_loss[train_loss["epoch"]==e]
-                data["label"] = data["label"].apply(lambda x: "Abnormal" if x==1 else "Normal")
-                normal_data = data[data["label"]==0]
-                abnormal_data = data[data["label"] == 1]
-                sns.kdeplot(data=normal_data,  x='loss', fill=True, legend=True, label="Normal")
-                sns.kdeplot(data=abnormal_data, x='loss', fill=True, legend=True, label="Abnormal", color="red")
-                plt.xscale("log")
-                plt.title(f"Loss Density of Epoch {e}")
-                plt.legend()
-                plt.savefig(self.model_dir + f"detailed_loss_epoch_{e}.png")
-                plt.show()
-        print("plot done")
+        if_break = False
+        if avg_valid_loss < best_valid_loss:  # store the model if it's a best model so far
+            best_valid_loss = avg_valid_loss
+            self.trainer.save(self.model_path)
+            epochs_no_improve = 0
 
+            if self.hypersphere_loss:
+                # if epoch > 10 and self.hypersphere_loss:
+                best_center = self.trainer.hyper_center
+                best_radius = self.trainer.radius
+                total_dist = train_dist + valid_dist
+
+                if best_center is None:
+                    raise TypeError("center is None")
+
+                print("best radius", best_radius)
+                best_center_path = self.model_dir + "best_center.pt"
+                print("Save best center", best_center_path)
+                torch.save({"center": best_center, "radius": best_radius}, best_center_path)
+
+                total_dist_path = self.model_dir + "best_total_dist.pt"
+                print("save total dist: ", total_dist_path)
+                torch.save(total_dist, total_dist_path)
+
+        else:
+            epochs_no_improve += 1  # keep track of the num of continuous no improving epochs
+
+        if epochs_no_improve == self.n_epochs_stop:  # early stop if there is no improvement
+            print("Early stopping")
+            if_break = True
+
+        return  best_valid_loss, epochs_no_improve, if_break
 

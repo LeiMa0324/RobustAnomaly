@@ -78,6 +78,7 @@ class Trainer():
             with open(self.vocab_path, 'rb') as f:
                 vocab = pickle.load(f)
 
+            #todo: separate this part from the train, put it into a data process proj
             train_logs, train_labels = sliding_window((train_logkeys, train_times),
                                                       vocab=vocab,
                                                       window_size=self.window_size,

@@ -1,6 +1,5 @@
 import sys
 
-from distributed.protocol import torch
 
 sys.path.append("../")
 # sys.path.append("../../")
@@ -50,7 +49,7 @@ options["attn_heads"] = 4
 options["output_attentions"] = True
 options["tracking"] = True
 
-options["epochs"] = 200  # 200
+options["epochs"] = 120  # 200
 options["n_epochs_stop"] = 10
 options["batch_size"] = 32
 
@@ -156,6 +155,8 @@ if __name__ == "__main__":
             Predictor(options).predict()
 
     elif args.mode == 'vocab':
+        options["train_vocab"] = "../output/bgl/datasets/noisy_small/train"
+        options["vocab_path"] = "../output/bgl/datasets/noisy_small/vocab.pkl"
         with open(options["train_vocab"], 'r') as f:
             logs = f.readlines()
         vocab = WordVocab(logs, if_seq_label=True, if_token_label=True)
